@@ -1,0 +1,1771 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Dunyo kezdim o‘ynadim...</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Kinematografik subtitrlar uchun Playfair Display -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet" />
+
+  <style>
+    /* Sof qora fon, skrollbarlarsiz to'liq oyna */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      background-color: #000000;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    /* 9:16 vertikal kanvasni ekranga mos markazlash */
+    .stage {
+      position: relative;
+      width: 100vw;
+      height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #000000;
+    }
+
+    #mainCanvas {
+      max-width: 100vw;
+      max-height: 100dvh;
+      width: auto;
+      height: 100%;
+      aspect-ratio: 9 / 16;
+      object-fit: contain;
+      display: block;
+      cursor: pointer;
+    }
+
+    /* Tor mobil ekranlarda eni bo'yicha to'liq moslashish */
+    @media (max-aspect-ratio: 9/16) {
+      #mainCanvas {
+        width: 100%;
+        height: auto;
+      }
+    }
+
+    /* Markaziy shaffof Play / Replay tugmasi */
+    .play-ring {
+      box-shadow: 0 0 38px rgba(251, 191, 36, 0.25), inset 0 0 18px rgba(255, 255, 255, 0.12);
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                  background-color 0.25s ease,
+                  box-shadow 0.25s ease;
+    }
+    .play-ring:hover {
+      transform: scale(1.07);
+      background-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 0 52px rgba(251, 191, 36, 0.4), inset 0 0 22px rgba(255, 255, 255, 0.18);
+    }
+    .play-ring:active {
+      transform: scale(0.95);
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <!-- 9:16 yuqori sifatli ichki o'lcham (720 x 1280, 60fps silliq chizish) -->
+    <canvas id="mainCanvas" width="720" height="1280" aria-label="2D Animatsiya"></canvas>
+
+    <!-- Minimal shaffof Play / Replay tugmasi (matnsiz, ijro paytida to'liq yo'qoladi) -->
+    <button
+      id="centerOverlay"
+      type="button"
+      aria-label="Ijro etish"
+      class="fixed inset-0 z-20 flex items-center justify-center bg-black/15 transition-opacity duration-500 ease-out focus:outline-none cursor-pointer"
+    >
+      <span class="play-ring w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white/10 backdrop-blur-md border border-white/25 flex items-center justify-center">
+        <!-- Play belgisi -->
+        <svg id="iconPlay" class="w-9 h-9 sm:w-10 sm:h-10 text-amber-50/95 ml-1" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5.14v13.72a1 1 0 001.52.85l10.6-6.86a1 1 0 000-1.7L9.52 4.29A1 1 0 008 5.14z" />
+        </svg>
+
+        <!-- Replay belgisi -->
+        <svg id="iconReplay" class="hidden w-9 h-9 sm:w-10 sm:h-10 text-amber-50/95" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      </span>
+    </button>
+  </main>
+
+  <!-- Ko'rinmas audio elementi: GitHub repoga audio.mp4 yoki audio.mp3 yuklansa avtomatik ulanadi -->
+  <audio id="songAudio" preload="auto" playsinline>
+    <source src="audio.mp4" type="video/mp4" />
+    <source src="audio.mp3" type="audio/mpeg" />
+  </audio>
+
+  <script>
+    /**
+     * =========================================================================
+     * «Dunyo kezdim o‘ynadim...» — Ona haqida 2D Siluet Animatsiya
+     * 9:16 Vertikal Canvas (720 x 1280) | 52.0 soniya | 8 sahna | 0.8s Dissolve
+     * =========================================================================
+     */
+
+    const WIDTH = 720;
+    const HEIGHT = 1280;
+    const TOTAL_DURATION = 52.0; // Umumiy davomiylik (soniya)
+    const CROSSFADE_DUR = 0.8;   // Sahnalararo erib o'tish (soniya)
+
+    // 8 ta sahna va sinxron subtitrlar jadvali
+    const SCENES = [
+      {
+        id: 0,
+        start: 0.0,
+        end: 5.5,
+        subtitle: "Dunyo kezdim o‘ynadim,\nko‘ngil rohat olmabdi...",
+        subStart: 0.35,
+        subEnd: 5.1,
+      },
+      {
+        id: 1,
+        start: 5.5,
+        end: 12.0,
+        subtitle: "Onamga borib boqsam,\nko‘zda nuri qolmabdi...",
+        subStart: 5.9,
+        subEnd: 11.6,
+      },
+      {
+        id: 2,
+        start: 12.0,
+        end: 18.0,
+        subtitle: "Topibman mol-u dunyo,\nro‘mol olib bermabman-a...",
+        subStart: 12.4,
+        subEnd: 17.6,
+      },
+      {
+        id: 3,
+        start: 18.0,
+        end: 24.0,
+        subtitle: "Bir o‘tirib choylaringizga,\nshakar qo‘shib bermabman-a...",
+        subStart: 18.4,
+        subEnd: 23.6,
+      },
+      {
+        id: 4,
+        start: 24.0,
+        end: 30.5,
+        subtitle: "Men o‘sha ko‘chalarda,\nyebman-u osh-u ovqat...",
+        subStart: 24.4,
+        subEnd: 30.1,
+      },
+      {
+        id: 5,
+        start: 30.5,
+        end: 37.0,
+        subtitle: "Siz esa bori shu deb,\nqilibsiz menga toqat...",
+        subStart: 30.9,
+        subEnd: 36.6,
+      },
+      {
+        id: 6,
+        start: 37.0,
+        end: 44.0,
+        subtitle: "Eh onam-a, onam-a,\nbu o‘g‘lingiz ko‘r ekan...",
+        subStart: 37.4,
+        subEnd: 43.6,
+      },
+      {
+        id: 7,
+        start: 44.0,
+        end: 52.0,
+        subtitle: "Asli duoingiz bilan,\nbu o‘g‘lingiz zo‘r ekan...",
+        subStart: 44.4,
+        subEnd: 49.6,
+      },
+    ];
+
+    // DOM elementlari
+    const mainCanvas = document.getElementById('mainCanvas');
+    const mainCtx = mainCanvas.getContext('2d');
+    const songAudio = document.getElementById('songAudio');
+    const centerOverlay = document.getElementById('centerOverlay');
+    const iconPlay = document.getElementById('iconPlay');
+    const iconReplay = document.getElementById('iconReplay');
+
+    // Silliq 0.8s crossfade uchun ikkita ofskrin kanvas
+    const offCanvasA = document.createElement('canvas');
+    offCanvasA.width = WIDTH;
+    offCanvasA.height = HEIGHT;
+    const ctxA = offCanvasA.getContext('2d');
+
+    const offCanvasB = document.createElement('canvas');
+    offCanvasB.width = WIDTH;
+    offCanvasB.height = HEIGHT;
+    const ctxB = offCanvasB.getContext('2d');
+
+    // Nozik kinematografik plyonka donadorligi (film grain)
+    const grainCanvas = document.createElement('canvas');
+    grainCanvas.width = 180;
+    grainCanvas.height = 320;
+    const grainCtx = grainCanvas.getContext('2d');
+    (function createFilmGrain() {
+      const img = grainCtx.createImageData(grainCanvas.width, grainCanvas.height);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.floor(Math.random() * 255);
+        d[i] = v;
+        d[i + 1] = v;
+        d[i + 2] = v;
+        d[i + 3] = 10;
+      }
+      grainCtx.putImageData(img, 0, 0);
+    })();
+
+    // Ijro holati
+    const state = {
+      currentTime: 0,
+      isPlaying: false,
+      isEnded: false,
+      audioAvailable: false,
+      lastFrameTs: 0,
+    };
+
+    // =========================================================================
+    // MATEMATIK YORDAMCHILAR
+    // =========================================================================
+    function mulberry32(seed) {
+      return function () {
+        let t = (seed += 0x6d2b79f5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+
+    function smoothstep(edge0, edge1, x) {
+      const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    // =========================================================================
+    // BARQAROR PROSEDURAL MA'LUMOTLAR (Yulduzlar, shahar, bokeh, yomg'ir, zarralar)
+    // =========================================================================
+    const rng = mulberry32(20260521);
+
+    // 1-sahna: Tungi shahar binolari va derazalari
+    const CITY_BUILDINGS = Array.from({ length: 14 }, (_, i) => {
+      const w = 58 + rng() * 68;
+      const h = 190 + rng() * 340;
+      const x = i * 64 - 40 + (rng() - 0.5) * 18;
+      const windows = [];
+      const cols = Math.max(2, Math.floor(w / 18));
+      const rows = Math.max(4, Math.floor(h / 24));
+      for (let r = 1; r < rows - 1; r++) {
+        for (let c = 1; c < cols; c++) {
+          if (rng() > 0.58) {
+            windows.push({
+              rx: c * 15 - 6,
+              ry: r * 20,
+              warm: rng() > 0.25,
+              alpha: 0.25 + rng() * 0.55,
+            });
+          }
+        }
+      }
+      return { x, w, h, windows };
+    });
+
+    const NIGHT_STARS = Array.from({ length: 95 }, () => ({
+      x: rng() * WIDTH,
+      y: 30 + rng() * 760,
+      r: 0.8 + rng() * 2.1,
+      phase: rng() * Math.PI * 2,
+      speed: 1.0 + rng() * 2.6,
+    }));
+
+    const STREET_BOKEH = Array.from({ length: 24 }, () => ({
+      x: rng() * WIDTH,
+      y: 420 + rng() * 520,
+      r: 18 + rng() * 48,
+      color: rng() > 0.3 ? '255, 190, 95' : '125, 175, 255',
+      alpha: 0.08 + rng() * 0.16,
+      phase: rng() * Math.PI * 2,
+      vx: (rng() - 0.5) * 8,
+    }));
+
+    const SCARF_SPARKLES = Array.from({ length: 65 }, () => ({
+      u: rng(),
+      offsetY: (rng() - 0.5) * 90,
+      r: 1.1 + rng() * 2.8,
+      speed: 0.4 + rng() * 0.9,
+      phase: rng() * Math.PI * 2,
+    }));
+
+    const DUST_MOTES = Array.from({ length: 55 }, () => ({
+      x: rng() * WIDTH,
+      y: rng() * HEIGHT,
+      r: 1.1 + rng() * 2.6,
+      vx: (rng() - 0.5) * 14,
+      vy: -7 - rng() * 16,
+      alpha: 0.18 + rng() * 0.48,
+      phase: rng() * Math.PI * 2,
+    }));
+
+    const CAFE_BOKEH = Array.from({ length: 28 }, () => ({
+      x: rng() * WIDTH,
+      y: 120 + rng() * 880,
+      r: 22 + rng() * 64,
+      color:
+        rng() < 0.45
+          ? '255, 195, 85'
+          : rng() < 0.78
+          ? '240, 120, 65'
+          : '215, 65, 85',
+      alpha: 0.09 + rng() * 0.18,
+      vx: (rng() - 0.5) * 12,
+      vy: (rng() - 0.5) * 8,
+      phase: rng() * Math.PI * 2,
+    }));
+
+    const RAIN_STREAKS = Array.from({ length: 85 }, () => ({
+      x: rng() * (WIDTH + 160),
+      y0: rng() * HEIGHT,
+      len: 26 + rng() * 48,
+      speed: 240 + rng() * 220,
+      alpha: 0.12 + rng() * 0.24,
+    }));
+
+    const GLOW_PETALS = Array.from({ length: 28 }, () => ({
+      x0: rng() * WIDTH,
+      y0: rng() * HEIGHT,
+      r: 2.2 + rng() * 3.8,
+      vy: 24 + rng() * 34,
+      sway: 14 + rng() * 26,
+      phase: rng() * Math.PI * 2,
+      warm: rng() > 0.45,
+    }));
+
+    const DUO_PARTICLES = Array.from({ length: 130 }, () => ({
+      x0: rng() * WIDTH,
+      y0: rng() * HEIGHT,
+      r: 1.2 + rng() * 3.6,
+      vy: -22 - rng() * 48,
+      sway: 10 + rng() * 24,
+      phase: rng() * Math.PI * 2,
+      alpha: 0.25 + rng() * 0.65,
+    }));
+
+    // =========================================================================
+    // SAHNA 1: TUNGI SHAHAR VA YOLG'IZ O'G'IL (0.0s – 5.5s)
+    // =========================================================================
+    function drawScene1(ctx, t, localT) {
+      const progress = clamp(localT / 5.5, 0, 1);
+
+      ctx.save();
+      // Sekin kinematografik kamera siljishi
+      const zoom = lerp(1.0, 1.045, progress);
+      ctx.translate(WIDTH * 0.5, HEIGHT * 0.52);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-WIDTH * 0.5, -HEIGHT * 0.52);
+
+      // Sovuq indigo-ko'k tungi osmon
+      const sky = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      sky.addColorStop(0, '#050816');
+      sky.addColorStop(0.45, '#0c1633');
+      sky.addColorStop(0.75, '#19264a');
+      sky.addColorStop(1, '#070912');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Miltillovchi yulduzlar
+      for (let i = 0; i < 45; i++) {
+        const s = NIGHT_STARS[i];
+        const tw = 0.4 + 0.6 * Math.sin(t * s.speed + s.phase);
+        ctx.fillStyle = `rgba(215, 232, 255, ${0.2 + 0.5 * tw})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y * 0.62, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Uzoqdagi shahar silueti (parallaks)
+      const horizonY = 930;
+      const cityShift = -progress * 42;
+      ctx.save();
+      ctx.translate(cityShift, 0);
+      for (const b of CITY_BUILDINGS) {
+        ctx.fillStyle = '#090e1f';
+        ctx.fillRect(b.x, horizonY - b.h, b.w, b.h + 40);
+        // Binolardagi yorug' derazalar
+        for (const w of b.windows) {
+          ctx.fillStyle = w.warm
+            ? `rgba(255, 200, 115, ${w.alpha * 0.72})`
+            : `rgba(150, 195, 255, ${w.alpha * 0.5})`;
+          ctx.fillRect(b.x + w.rx, horizonY - b.h + w.ry, 6, 9);
+        }
+      }
+      ctx.restore();
+
+      // Pastda suzuvchi tungi tuman (drifting mist)
+      const mistShift = Math.sin(t * 0.5) * 45;
+      const mistGrad = ctx.createLinearGradient(0, 680, 0, 980);
+      mistGrad.addColorStop(0, 'rgba(95, 130, 190, 0)');
+      mistGrad.addColorStop(0.55, 'rgba(95, 130, 190, 0.16)');
+      mistGrad.addColorStop(1, 'rgba(15, 22, 42, 0)');
+      ctx.fillStyle = mistGrad;
+      ctx.fillRect(-60 + mistShift, 680, WIDTH + 120, 300);
+
+      // Ko'cha chiroqlari va bokeh yog'dulari
+      for (const b of STREET_BOKEH) {
+        const bx = ((b.x + b.vx * t) % (WIDTH + 100) + (WIDTH + 100)) % (WIDTH + 100) - 50;
+        const pulse = 0.75 + 0.25 * Math.sin(t * 1.6 + b.phase);
+        const g = ctx.createRadialGradient(bx, b.y, 2, bx, b.y, b.r);
+        g.addColorStop(0, `rgba(${b.color}, ${b.alpha * pulse})`);
+        g.addColorStop(1, `rgba(${b.color}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(bx, b.y, b.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Old plandagi ko'cha fonari (o'ng tomonda)
+      const lampX = 585 - progress * 55;
+      const lampY = 390;
+      const lampGlow = ctx.createRadialGradient(lampX, lampY, 8, lampX, lampY, 240);
+      lampGlow.addColorStop(0, 'rgba(255, 212, 135, 0.52)');
+      lampGlow.addColorStop(0.35, 'rgba(245, 165, 70, 0.18)');
+      lampGlow.addColorStop(1, 'rgba(245, 165, 70, 0)');
+      ctx.fillStyle = lampGlow;
+      ctx.beginPath();
+      ctx.arc(lampX, lampY, 240, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#05060c';
+      ctx.fillRect(lampX - 5, lampY, 10, 560);
+      ctx.beginPath();
+      ctx.roundRect(lampX - 18, lampY - 12, 36, 22, 5);
+      ctx.fill();
+      ctx.fillStyle = '#fff0c2';
+      ctx.beginPath();
+      ctx.arc(lampX, lampY + 4, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Yo'lak va yer
+      const groundY = 945;
+      const groundGrad = ctx.createLinearGradient(0, groundY, 0, HEIGHT);
+      groundGrad.addColorStop(0, '#0a0e1d');
+      groundGrad.addColorStop(1, '#030408');
+      ctx.fillStyle = groundGrad;
+      ctx.fillRect(0, groundY, WIDTH, HEIGHT - groundY);
+
+      // Asfaltda fonar nurining xira aksi
+      const refGrad = ctx.createRadialGradient(lampX, groundY + 40, 10, lampX, groundY + 40, 180);
+      refGrad.addColorStop(0, 'rgba(255, 185, 95, 0.2)');
+      refGrad.addColorStop(1, 'rgba(255, 185, 95, 0)');
+      ctx.fillStyle = refGrad;
+      ctx.fillRect(lampX - 180, groundY, 360, 140);
+
+      // YURAYOTGAN YOSH O'G'IL SILUETI (boshi biroz egik, sekin qadam)
+      const sonX = lerp(185, 455, progress);
+      const walk = t * 2.9;
+      const bob = Math.abs(Math.sin(walk)) * 5;
+      const legA = Math.sin(walk) * 28;
+      const legB = Math.sin(walk + Math.PI) * 28;
+      const liftA = Math.max(0, Math.cos(walk)) * 10;
+      const liftB = Math.max(0, Math.cos(walk + Math.PI)) * 10;
+
+      ctx.save();
+      ctx.translate(sonX, groundY + 6 + bob * 0.45);
+      ctx.fillStyle = '#04050a';
+      ctx.strokeStyle = '#04050a';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      // Orqa oyoq
+      ctx.lineWidth = 22;
+      ctx.beginPath();
+      ctx.moveTo(-4, -145);
+      ctx.quadraticCurveTo(legB * 0.45 + 6, -75, legB, -liftB - 6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(legB + 10, -liftB - 4, 20, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Oldi oyoq
+      ctx.beginPath();
+      ctx.moveTo(6, -145);
+      ctx.quadraticCurveTo(legA * 0.45 + 10, -75, legA, -liftA - 6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(legA + 10, -liftA - 4, 20, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Kurtka/palto va gavda (qo'llari cho'ntakda, o'ychan)
+      ctx.beginPath();
+      ctx.moveTo(-30, -135);
+      ctx.bezierCurveTo(-40, -210, -34, -295, -4, -318);
+      ctx.bezierCurveTo(22, -322, 38, -295, 34, -235);
+      ctx.lineTo(28, -135);
+      ctx.closePath();
+      ctx.fill();
+
+      // Bosh (biroz pastga egilgan, xomush)
+      ctx.beginPath();
+      ctx.arc(18, -344, 28, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Fonar nuri qirrasi (rim-light)
+      ctx.strokeStyle = 'rgba(255, 205, 130, 0.35)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(18, -344, 28, -1.2, 0.5);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // SAHNA 2: DERAZA YONIDA KUTAYOTGAN ONA (5.5s – 12.0s)
+    // =========================================================================
+    function drawScene2(ctx, t, localT) {
+      const progress = clamp(localT / 6.5, 0, 1);
+
+      ctx.save();
+      const zoom = lerp(1.0, 1.055, progress);
+      ctx.translate(WIDTH * 0.48, HEIGHT * 0.48);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-WIDTH * 0.48, -HEIGHT * 0.48);
+
+      // Sokin xona devori
+      const roomGrad = ctx.createLinearGradient(0, 0, WIDTH, HEIGHT);
+      roomGrad.addColorStop(0, '#0a0b15');
+      roomGrad.addColorStop(0.55, '#121526');
+      roomGrad.addColorStop(1, '#08070d');
+      ctx.fillStyle = roomGrad;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // O'ng tomondagi yog'och deraza
+      const winX = 330, winY = 175, winW = 330, winH = 520;
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(winX, winY, winW, winH, [14, 14, 4, 4]);
+      ctx.clip();
+
+      // Deraza ortidagi oydin tun
+      const nightGrad = ctx.createLinearGradient(0, winY, 0, winY + winH);
+      nightGrad.addColorStop(0, '#08102b');
+      nightGrad.addColorStop(0.55, '#162754');
+      nightGrad.addColorStop(1, '#263864');
+      ctx.fillStyle = nightGrad;
+      ctx.fillRect(winX, winY, winW, winH);
+
+      // To'lin oy va yog'du
+      const moonX = winX + 235, moonY = winY + 115;
+      const moonGlow = ctx.createRadialGradient(moonX, moonY, 6, moonX, moonY, 130);
+      moonGlow.addColorStop(0, 'rgba(235, 245, 255, 0.72)');
+      moonGlow.addColorStop(0.4, 'rgba(155, 190, 255, 0.22)');
+      moonGlow.addColorStop(1, 'rgba(155, 190, 255, 0)');
+      ctx.fillStyle = moonGlow;
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, 130, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#f2f7ff';
+      ctx.beginPath();
+      ctx.arc(moonX, moonY, 28, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tashqaridagi daraxt shoxlari silueti
+      ctx.fillStyle = '#091124';
+      ctx.beginPath();
+      ctx.moveTo(winX, winY + winH);
+      ctx.quadraticCurveTo(winX + 90, winY + winH - 95, winX + 185, winY + winH - 55);
+      ctx.quadraticCurveTo(winX + 265, winY + winH - 115, winX + winW, winY + winH - 65);
+      ctx.lineTo(winX + winW, winY + winH);
+      ctx.closePath();
+      ctx.fill();
+
+      // Deraza panjaralari
+      ctx.strokeStyle = '#0b0d17';
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.moveTo(winX + winW * 0.5, winY);
+      ctx.lineTo(winX + winW * 0.5, winY + winH);
+      ctx.moveTo(winX, winY + winH * 0.48);
+      ctx.lineTo(winX + winW, winY + winH * 0.48);
+      ctx.stroke();
+      ctx.restore();
+
+      // Deraza romi
+      ctx.strokeStyle = '#1b1d2e';
+      ctx.lineWidth = 12;
+      ctx.strokeRect(winX, winY, winW, winH);
+
+      // Derazadan xonaga tushayotgan sovuq oy nuri oqimi
+      const moonShaft = ctx.createLinearGradient(winX + 120, winY + 120, 120, 960);
+      moonShaft.addColorStop(0, 'rgba(175, 208, 255, 0.22)');
+      moonShaft.addColorStop(0.55, 'rgba(145, 185, 255, 0.08)');
+      moonShaft.addColorStop(1, 'rgba(145, 185, 255, 0)');
+      ctx.fillStyle = moonShaft;
+      ctx.beginPath();
+      ctx.moveTo(winX, winY + 10);
+      ctx.lineTo(winX + winW, winY + 10);
+      ctx.lineTo(430, 1080);
+      ctx.lineTo(40, 920);
+      ctx.closePath();
+      ctx.fill();
+
+      // Sekin hilpirayotgan shaffof parda
+      const sway1 = Math.sin(t * 1.1) * 20;
+      const sway2 = Math.cos(t * 0.85) * 14;
+      ctx.fillStyle = 'rgba(215, 230, 255, 0.13)';
+      ctx.beginPath();
+      ctx.moveTo(winX + winW - 35, winY - 10);
+      ctx.quadraticCurveTo(winX + winW - 115 + sway1, winY + 260, winX + winW - 75 + sway2, winY + winH + 170);
+      ctx.lineTo(winX + winW + 30, winY + winH + 170);
+      ctx.lineTo(winX + winW + 18, winY - 10);
+      ctx.closePath();
+      ctx.fill();
+
+      // Chap tomondan iliq xira chiroq yog'dusi (kontrast)
+      const warmLamp = ctx.createRadialGradient(80, 740, 10, 130, 740, 380);
+      warmLamp.addColorStop(0, 'rgba(255, 178, 82, 0.32)');
+      warmLamp.addColorStop(0.5, 'rgba(235, 130, 50, 0.1)');
+      warmLamp.addColorStop(1, 'rgba(235, 130, 50, 0)');
+      ctx.fillStyle = warmLamp;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Deraza tokchasi va ko'rpacha / o'rindiq
+      ctx.fillStyle = '#0c0d16';
+      ctx.fillRect(310, winY + winH - 2, 370, 22);
+      ctx.fillRect(0, 895, WIDTH, 385);
+
+      // RO'MOL O'RAGAN KEKSA ONA SILUETI (derazaga qarab, sokin kutib o'tiribdi)
+      const breath = Math.sin(t * 1.25) * 2.5;
+      ctx.save();
+      ctx.fillStyle = '#06070d';
+
+      // Ko'rpacha ustida o'tirgan gavda
+      ctx.beginPath();
+      ctx.moveTo(150, 910);
+      ctx.bezierCurveTo(148, 800, 168, 705, 218, 670 + breath); // egilgan yelka
+      ctx.bezierCurveTo(265, 650 + breath, 305, 680 + breath, 315, 745 + breath);
+      ctx.bezierCurveTo(335, 815, 365, 845, 395, 885);
+      ctx.lineTo(395, 915);
+      ctx.closePath();
+      ctx.fill();
+
+      // Bosh va an'anaviy ro'mol (orqaga va yelkaga tushgan yumshoq chiziq)
+      ctx.beginPath();
+      ctx.arc(276, 616 + breath, 44, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Ro'mol etagi yelka bo'ylab
+      ctx.beginPath();
+      ctx.moveTo(240, 582 + breath);
+      ctx.bezierCurveTo(205, 615 + breath, 195, 675 + breath, 185, 735 + breath);
+      ctx.lineTo(255, 725 + breath);
+      ctx.quadraticCurveTo(275, 670 + breath, 290, 652 + breath);
+      ctx.closePath();
+      ctx.fill();
+
+      // Profil (burun va iyak — deraza tomon qarab)
+      ctx.beginPath();
+      ctx.moveTo(314, 606 + breath);
+      ctx.lineTo(327, 620 + breath);
+      ctx.lineTo(316, 630 + breath);
+      ctx.lineTo(317, 643 + breath);
+      ctx.lineTo(298, 654 + breath);
+      ctx.closePath();
+      ctx.fill();
+
+      // Oy nurining yuz va ro'mol qirrasidagi nozik aksi
+      ctx.strokeStyle = 'rgba(205, 228, 255, 0.36)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(276, 616 + breath, 44, -0.85, 0.45);
+      ctx.stroke();
+
+      // Orqa yelkada iliq chiroqning xira aksi
+      ctx.strokeStyle = 'rgba(255, 185, 95, 0.25)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(215, 675 + breath);
+      ctx.quadraticCurveTo(175, 740, 162, 835);
+      ctx.stroke();
+      ctx.restore();
+
+      // Havoda suzuvchi chang zarrachalari
+      for (const m of DUST_MOTES) {
+        const mx = (m.x + m.vx * 0.4 * t + WIDTH) % WIDTH;
+        const my = (m.y + m.vy * 0.4 * t + HEIGHT) % HEIGHT;
+        const a = m.alpha * 0.7 * (0.5 + 0.5 * Math.sin(t * 1.8 + m.phase));
+        ctx.fillStyle = `rgba(215, 232, 255, ${a})`;
+        ctx.beginPath();
+        ctx.arc(mx, my, m.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // SAHNA 3: TUNGI OSMONDA HILPIRAYOTGAN OQ RO'MOL (12.0s – 18.0s)
+    // =========================================================================
+    function drawScene3(ctx, t, localT) {
+      const progress = clamp(localT / 6.0, 0, 1);
+
+      // Chuqur shoirana tungi osmon
+      const sky = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      sky.addColorStop(0, '#040612');
+      sky.addColorStop(0.5, '#0b122b');
+      sky.addColorStop(0.84, '#1b1d38');
+      sky.addColorStop(1, '#261c24');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Miltillovchi yulduzlar
+      for (const s of NIGHT_STARS) {
+        const tw = 0.35 + 0.65 * Math.sin(t * s.speed + s.phase);
+        ctx.fillStyle = `rgba(255, 250, 235, ${0.22 + 0.65 * tw})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Pastda uzoqdagi xira oltin shahar chiroqlari ("mol-u dunyo")
+      const horizonGlow = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT, 40, WIDTH * 0.5, HEIGHT, 480);
+      horizonGlow.addColorStop(0, 'rgba(255, 185, 85, 0.28)');
+      horizonGlow.addColorStop(0.55, 'rgba(215, 130, 55, 0.08)');
+      horizonGlow.addColorStop(1, 'rgba(215, 130, 55, 0)');
+      ctx.fillStyle = horizonGlow;
+      ctx.fillRect(0, 820, WIDTH, 460);
+
+      ctx.fillStyle = '#070810';
+      ctx.beginPath();
+      ctx.moveTo(0, HEIGHT);
+      for (let x = 0; x <= WIDTH; x += 24) {
+        const bh = 38 + Math.sin(x * 0.04) * 18 + Math.cos(x * 0.11) * 14;
+        ctx.lineTo(x, HEIGHT - bh - 45);
+      }
+      ctx.lineTo(WIDTH, HEIGHT);
+      ctx.closePath();
+      ctx.fill();
+
+      // Pastdagi mayda oltin chiroq nuqtalari
+      for (let i = 0; i < 36; i++) {
+        const lx = (i * 21 + 12) % WIDTH;
+        const ly = HEIGHT - 28 - ((i * 37) % 42);
+        const a = 0.25 + 0.45 * Math.sin(t * 2 + i);
+        ctx.fillStyle = `rgba(255, 205, 115, ${a})`;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // SHAMOLDA HILPIRAB UCHAYOTGAN NURAFSHON OQ RO'MOL
+      const baseCenterY = lerp(585, 515, progress);
+      const driftX = lerp(-40, 45, progress);
+
+      ctx.save();
+      ctx.translate(driftX, 0);
+
+      // Ro'mol atrofidagi yumshoq nur yog'dusi
+      const scarfGlow = ctx.createRadialGradient(WIDTH * 0.5, baseCenterY, 20, WIDTH * 0.5, baseCenterY, 320);
+      scarfGlow.addColorStop(0, 'rgba(255, 248, 232, 0.22)');
+      scarfGlow.addColorStop(0.5, 'rgba(210, 228, 255, 0.09)');
+      scarfGlow.addColorStop(1, 'rgba(210, 228, 255, 0)');
+      ctx.fillStyle = scarfGlow;
+      ctx.beginPath();
+      ctx.arc(WIDTH * 0.5, baseCenterY, 320, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3 qavatli nafis ipak ro'mol to'lqinlari
+      const layers = [
+        { offsetY: -12, amp: 42, thick: 96, alpha: 0.22, phase: 0.0 },
+        { offsetY: 4, amp: 34, thick: 72, alpha: 0.34, phase: 0.8 },
+        { offsetY: 10, amp: 28, thick: 46, alpha: 0.48, phase: 1.5 },
+      ];
+
+      for (const layer of layers) {
+        const ptsTop = [];
+        const ptsBot = [];
+        const steps = 36;
+        for (let i = 0; i <= steps; i++) {
+          const u = i / steps;
+          const x = lerp(45, WIDTH - 45, u);
+          const envelope = Math.sin(u * Math.PI); // Chetlari ingichka, o'rtasi keng
+          const wave =
+            Math.sin(u * 5.2 - t * 2.2 + layer.phase) * layer.amp * (0.45 + 0.55 * u) +
+            Math.cos(u * 2.8 - t * 1.3) * 18;
+          const yMid = baseCenterY + layer.offsetY + wave - (u - 0.5) * 95;
+          const halfH = (layer.thick * (0.28 + 0.72 * envelope)) * (0.85 + 0.15 * Math.sin(u * 6 - t * 2));
+          ptsTop.push({ x, y: yMid - halfH });
+          ptsBot.push({ x, y: yMid + halfH });
+        }
+
+        const silkGrad = ctx.createLinearGradient(50, baseCenterY - 120, WIDTH - 50, baseCenterY + 120);
+        silkGrad.addColorStop(0, `rgba(235, 244, 255, ${layer.alpha * 0.25})`);
+        silkGrad.addColorStop(0.45, `rgba(255, 252, 245, ${layer.alpha})`);
+        silkGrad.addColorStop(0.85, `rgba(255, 242, 220, ${layer.alpha * 0.85})`);
+        silkGrad.addColorStop(1, `rgba(255, 252, 245, ${layer.alpha * 0.15})`);
+
+        ctx.fillStyle = silkGrad;
+        ctx.beginPath();
+        ctx.moveTo(ptsTop[0].x, ptsTop[0].y);
+        for (let i = 1; i < ptsTop.length; i++) {
+          ctx.lineTo(ptsTop[i].x, ptsTop[i].y);
+        }
+        for (let i = ptsBot.length - 1; i >= 0; i--) {
+          ctx.lineTo(ptsBot[i].x, ptsBot[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Ro'mol chetidagi nozik nurli hoshiya
+        ctx.strokeStyle = `rgba(255, 253, 245, ${layer.alpha * 0.9})`;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(ptsTop[0].x, ptsTop[0].y);
+        for (let i = 1; i < ptsTop.length; i++) {
+          ctx.lineTo(ptsTop[i].x, ptsTop[i].y);
+        }
+        ctx.stroke();
+      }
+
+      // Ro'mol ortidan ergashuvchi yorug' zarrachalar
+      for (const sp of SCARF_SPARKLES) {
+        const u = (sp.u + t * 0.08 * sp.speed) % 1;
+        const sx = lerp(55, WIDTH - 55, u);
+        const wave = Math.sin(u * 5.2 - t * 2.2) * 34;
+        const sy = baseCenterY + wave - (u - 0.5) * 95 + sp.offsetY * Math.sin(t + sp.phase);
+        const a = Math.sin(u * Math.PI) * (0.35 + 0.65 * Math.sin(t * 3 + sp.phase));
+        ctx.fillStyle = `rgba(255, 245, 220, ${clamp(a, 0, 0.9)})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sp.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // SAHNA 4: XONTAXTA, CHOYNAK VA IKKI PIYOLA CHOY (18.0s – 24.0s)
+    // =========================================================================
+    function drawScene4(ctx, t, localT) {
+      const progress = clamp(localT / 6.0, 0, 1);
+
+      ctx.save();
+      // Sekin yaqinlashuvchi samimiy kamera
+      const zoom = lerp(1.0, 1.06, progress);
+      ctx.translate(WIDTH * 0.5, HEIGHT * 0.58);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-WIDTH * 0.5, -HEIGHT * 0.58);
+
+      // Iliq qahrabo xona muhiti
+      const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      bg.addColorStop(0, '#0e090a');
+      bg.addColorStop(0.45, '#21130e');
+      bg.addColorStop(0.8, '#170d0a');
+      bg.addColorStop(1, '#080506');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Markaziy iliq chiroq yog'dusi
+      const pulse = 0.95 + 0.05 * Math.sin(t * 2.4);
+      const warmCenter = ctx.createRadialGradient(WIDTH * 0.5, 580, 20, WIDTH * 0.5, 620, 480);
+      warmCenter.addColorStop(0, `rgba(255, 192, 95, ${0.52 * pulse})`);
+      warmCenter.addColorStop(0.45, `rgba(225, 128, 48, ${0.22 * pulse})`);
+      warmCenter.addColorStop(1, 'rgba(225, 128, 48, 0)');
+      ctx.fillStyle = warmCenter;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Xontaxta yuzasi (pastda)
+      const tableY = 815;
+      ctx.fillStyle = '#0c0707';
+      ctx.beginPath();
+      ctx.roundRect(55, tableY, 610, 36, 10);
+      ctx.fill();
+      ctx.fillRect(105, tableY + 34, 30, 320);
+      ctx.fillRect(585, tableY + 34, 30, 320);
+
+      // Xontaxta ustida iliq nur chizig'i
+      const tableRim = ctx.createLinearGradient(80, tableY, 640, tableY);
+      tableRim.addColorStop(0, 'rgba(255, 190, 95, 0)');
+      tableRim.addColorStop(0.5, 'rgba(255, 205, 125, 0.45)');
+      tableRim.addColorStop(1, 'rgba(255, 190, 95, 0)');
+      ctx.fillStyle = tableRim;
+      ctx.fillRect(80, tableY, 560, 4);
+
+      // AN'ANAVIY CHOYNAK SILUETI (chap-markaz)
+      const potX = 285, potY = tableY;
+      ctx.save();
+      ctx.fillStyle = '#090506';
+
+      // Choynak tanasi
+      ctx.beginPath();
+      ctx.ellipse(potX, potY - 68, 74, 68, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Taglik
+      ctx.fillRect(potX - 44, potY - 12, 88, 12);
+      // Qopqoq va tutqich tugmasi
+      ctx.beginPath();
+      ctx.ellipse(potX, potY - 134, 36, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(potX, potY - 150, 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Choynak jo'mragi (o'ngga)
+      ctx.strokeStyle = '#090506';
+      ctx.lineWidth = 18;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(potX + 58, potY - 46);
+      ctx.bezierCurveTo(potX + 98, potY - 56, potX + 94, potY - 115, potX + 114, potY - 124);
+      ctx.stroke();
+
+      // Choynak dastasi (chapga)
+      ctx.lineWidth = 14;
+      ctx.beginPath();
+      ctx.moveTo(potX - 58, potY - 102);
+      ctx.bezierCurveTo(potX - 118, potY - 115, potX - 120, potY - 28, potX - 56, potY - 38);
+      ctx.stroke();
+
+      // Choynak chetidagi iliq nur aksi
+      ctx.strokeStyle = 'rgba(255, 200, 115, 0.32)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(potX, potY - 68, 72, -1.2, 0.15);
+      ctx.stroke();
+      ctx.restore();
+
+      // IKKITA PIYOLA SILUETI (o'ng tomonda)
+      const piyolas = [
+        { x: 468, y: tableY, s: 1.0 },
+        { x: 565, y: tableY, s: 0.92 },
+      ];
+      for (const p of piyolas) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(p.s, p.s);
+        ctx.fillStyle = '#090506';
+        ctx.beginPath();
+        ctx.moveTo(-40, -52);
+        ctx.lineTo(40, -52);
+        ctx.quadraticCurveTo(36, -6, 18, 0);
+        ctx.lineTo(-18, 0);
+        ctx.quadraticCurveTo(-36, -6, -40, -52);
+        ctx.closePath();
+        ctx.fill();
+
+        // Piyola labidagi iliq yaltiroq chiziq
+        ctx.strokeStyle = 'rgba(255, 210, 130, 0.42)';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(-36, -51);
+        ctx.lineTo(36, -51);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // PIYOLALAR VA CHOYNAKDAN YUQORIGA BURALIB CHIQAYOTGAN MAYIN BUG'
+      function drawSteamWisp(baseX, baseY, height, phaseOffset, opacity) {
+        ctx.save();
+        const grad = ctx.createLinearGradient(baseX, baseY, baseX, baseY - height);
+        grad.addColorStop(0, `rgba(255, 232, 195, ${opacity})`);
+        grad.addColorStop(0.55, `rgba(255, 224, 180, ${opacity * 0.55})`);
+        grad.addColorStop(1, 'rgba(255, 224, 180, 0)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 10;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        const segs = 16;
+        for (let i = 0; i <= segs; i++) {
+          const u = i / segs;
+          const x = baseX + Math.sin(u * 4.5 - t * 1.55 + phaseOffset) * (10 + u * 26);
+          const y = baseY - u * height;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      drawSteamWisp(468, tableY - 58, 280, 0.0, 0.24);
+      drawSteamWisp(476, tableY - 62, 230, 2.2, 0.18);
+      drawSteamWisp(565, tableY - 54, 240, 1.1, 0.22);
+      drawSteamWisp(558, tableY - 58, 195, 3.4, 0.16);
+      drawSteamWisp(potX + 114, potY - 128, 190, 4.1, 0.2);
+
+      // Iliq havoda suzuvchi mayin chang zarrachalari
+      for (const m of DUST_MOTES) {
+        const mx = (m.x + m.vx * 0.45 * t + WIDTH) % WIDTH;
+        const my = (m.y + m.vy * 0.5 * t + HEIGHT) % HEIGHT;
+        const a = m.alpha * 0.85 * (0.5 + 0.5 * Math.sin(t * 2 + m.phase));
+        ctx.fillStyle = `rgba(255, 215, 145, ${a})`;
+        ctx.beginPath();
+        ctx.arc(mx, my, m.r * 1.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // SAHNA 5: YORUG' KO'CHA VA RESTORAN OYNASI (24.0s – 30.5s)
+    // =========================================================================
+    function drawScene5(ctx, t, localT) {
+      const progress = clamp(localT / 6.5, 0, 1);
+
+      ctx.save();
+      const panX = lerp(-14, 14, progress);
+      ctx.translate(panX, 0);
+
+      // Issiq, gavjum shahar oqshomi foni
+      const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      bg.addColorStop(0, '#140b14');
+      bg.addColorStop(0.42, '#2d151b');
+      bg.addColorStop(0.75, '#3b1e18');
+      bg.addColorStop(1, '#0b070a');
+      ctx.fillStyle = bg;
+      ctx.fillRect(-30, 0, WIDTH + 60, HEIGHT);
+
+      // Boy oltin, qahrabo va qirmizi bokeh chiroqlari
+      for (const b of CAFE_BOKEH) {
+        const bx = ((b.x + b.vx * t) % (WIDTH + 120) + (WIDTH + 120)) % (WIDTH + 120) - 60;
+        const by = ((b.y + b.vy * t) % (HEIGHT + 120) + (HEIGHT + 120)) % (HEIGHT + 120) - 60;
+        const pulse = 0.75 + 0.25 * Math.sin(t * 1.8 + b.phase);
+        const g = ctx.createRadialGradient(bx, by, 2, bx, by, b.r);
+        g.addColorStop(0, `rgba(${b.color}, ${b.alpha * pulse})`);
+        g.addColorStop(1, `rgba(${b.color}, 0)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(bx, by, b.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Yorug' restoran vitrina oynasi
+      const winX = 65, winY = 180, winW = 590, winH = 690;
+      const glassGrad = ctx.createLinearGradient(winX, winY, winX + winW, winY + winH);
+      glassGrad.addColorStop(0, 'rgba(255, 205, 115, 0.34)');
+      glassGrad.addColorStop(0.5, 'rgba(245, 145, 65, 0.22)');
+      glassGrad.addColorStop(1, 'rgba(180, 70, 55, 0.16)');
+      ctx.fillStyle = glassGrad;
+      ctx.fillRect(winX, winY, winW, winH);
+
+      // Restoran ichidagi osma chiroqlar
+      const pendants = [195, 360, 525];
+      for (const px of pendants) {
+        ctx.strokeStyle = '#120a0d';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(px, winY);
+        ctx.lineTo(px, winY + 135);
+        ctx.stroke();
+
+        const pg = ctx.createRadialGradient(px, winY + 150, 5, px, winY + 150, 130);
+        pg.addColorStop(0, 'rgba(255, 232, 165, 0.65)');
+        pg.addColorStop(1, 'rgba(255, 185, 85, 0)');
+        ctx.fillStyle = pg;
+        ctx.beginPath();
+        ctx.arc(px, winY + 150, 130, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#140c0f';
+        ctx.beginPath();
+        ctx.moveTo(px - 28, winY + 146);
+        ctx.quadraticCurveTo(px, winY + 118, px + 28, winY + 146);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Oyna ichida stol yonida o'tirgan o'g'il silueti
+      const breath = Math.sin(t * 1.4) * 2;
+      ctx.fillStyle = '#090609';
+      // Stol
+      ctx.fillRect(280, 745, 260, 18);
+      ctx.fillRect(398, 763, 22, 115);
+      // Stol ustidagi idish va qadah silueti
+      ctx.beginPath();
+      ctx.roundRect(355, 725, 62, 20, 6);
+      ctx.fill();
+      ctx.fillRect(455, 712, 18, 33);
+
+      // O'g'il silueti (chapdan stolga qarab o'tiribdi)
+      ctx.beginPath();
+      ctx.moveTo(215, 875);
+      ctx.bezierCurveTo(205, 760, 218, 645, 265, 608 + breath);
+      ctx.bezierCurveTo(305, 595 + breath, 338, 632 + breath, 338, 705 + breath);
+      ctx.lineTo(325, 875);
+      ctx.closePath();
+      ctx.fill();
+      // Bosh
+      ctx.beginPath();
+      ctx.arc(298, 558 + breath, 40, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Oynada sekin sirpanayotgan yorug' shisha akslari (diagonal shimmer)
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(winX, winY, winW, winH);
+      ctx.clip();
+      const shimmerShift = lerp(-180, 220, progress);
+      ctx.fillStyle = 'rgba(255, 240, 210, 0.08)';
+      ctx.beginPath();
+      ctx.moveTo(winX + 120 + shimmerShift, winY);
+      ctx.lineTo(winX + 215 + shimmerShift, winY);
+      ctx.lineTo(winX + 45 + shimmerShift, winY + winH);
+      ctx.lineTo(winX - 50 + shimmerShift, winY + winH);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = 'rgba(255, 240, 210, 0.05)';
+      ctx.beginPath();
+      ctx.moveTo(winX + 265 + shimmerShift, winY);
+      ctx.lineTo(winX + 305 + shimmerShift, winY);
+      ctx.lineTo(winX + 135 + shimmerShift, winY + winH);
+      ctx.lineTo(winX + 95 + shimmerShift, winY + winH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Vitrina romi va devor qismi
+      ctx.strokeStyle = '#070508';
+      ctx.lineWidth = 18;
+      ctx.strokeRect(winX, winY, winW, winH);
+      ctx.fillStyle = '#070508';
+      ctx.fillRect(-30, winY + winH, WIDTH + 60, HEIGHT - (winY + winH));
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // SAHNA 6: KAMTARONA UYDA SABR BILAN O'TIRGAN ONA (30.5s – 37.0s)
+    // =========================================================================
+    function drawScene6(ctx, t, localT) {
+      const progress = clamp(localT / 6.5, 0, 1);
+
+      ctx.save();
+      const zoom = lerp(1.0, 1.045, progress);
+      ctx.translate(WIDTH * 0.5, HEIGHT * 0.55);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-WIDTH * 0.5, -HEIGHT * 0.55);
+
+      // Sokin qorong'u xona
+      const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      bg.addColorStop(0, '#07060a');
+      bg.addColorStop(0.55, '#120e12');
+      bg.addColorStop(1, '#050407');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Tepadagi bitta iliq lampochka
+      const bulbX = WIDTH * 0.5;
+      const bulbY = 230;
+      ctx.strokeStyle = '#1b171f';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(bulbX, 0);
+      ctx.lineTo(bulbX, bulbY);
+      ctx.stroke();
+
+      // Yumshoq konus shaklidagi iliq nur
+      const flicker = 0.96 + 0.04 * Math.sin(t * 4.5);
+      const cone = ctx.createRadialGradient(bulbX, bulbY + 20, 14, bulbX, bulbY + 410, 520);
+      cone.addColorStop(0, `rgba(255, 206, 122, ${0.55 * flicker})`);
+      cone.addColorStop(0.42, `rgba(235, 148, 62, ${0.2 * flicker})`);
+      cone.addColorStop(1, 'rgba(235, 148, 62, 0)');
+      ctx.fillStyle = cone;
+      ctx.beginPath();
+      ctx.moveTo(bulbX - 24, bulbY + 12);
+      ctx.lineTo(bulbX + 24, bulbY + 12);
+      ctx.lineTo(bulbX + 340, 1080);
+      ctx.lineTo(bulbX - 340, 1080);
+      ctx.closePath();
+      ctx.fill();
+
+      // Lampochka o'zi
+      ctx.fillStyle = '#ffebb5';
+      ctx.beginPath();
+      ctx.arc(bulbX, bulbY + 14, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#151218';
+      ctx.fillRect(bulbX - 9, bulbY - 6, 18, 14);
+
+      // Kamtarona pol / ko'rpacha chizig'i
+      ctx.fillStyle = '#09070b';
+      ctx.fillRect(0, 920, WIDTH, 360);
+
+      // QO'LLARINI QOVUSHTIRIB SABR BILAN O'TIRGAN ONA SILUETI (markazda)
+      const breath = Math.sin(t * 1.15) * 2.5;
+      ctx.save();
+      ctx.translate(WIDTH * 0.5, 922);
+      ctx.fillStyle = '#050408';
+
+      // O'tirgan gavda va keng ro'mol
+      ctx.beginPath();
+      ctx.moveTo(-128, 0);
+      ctx.bezierCurveTo(-125, -85, -92, -185, -48, -225 + breath);
+      ctx.quadraticCurveTo(0, -242 + breath, 48, -225 + breath);
+      ctx.bezierCurveTo(92, -185, 125, -85, 128, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      // Bosh va ro'mol (biroz egilgan, sokin toqat)
+      ctx.beginPath();
+      ctx.arc(0, -276 + breath, 46, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tepadagi chiroqning bosh va yelkadagi iliq nurli konturi
+      ctx.strokeStyle = 'rgba(255, 205, 125, 0.42)';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.arc(0, -276 + breath, 46, -2.55, -0.58);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255, 195, 110, 0.25)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-54, -218 + breath);
+      ctx.quadraticCurveTo(-90, -165, -108, -95);
+      ctx.moveTo(54, -218 + breath);
+      ctx.quadraticCurveTo(90, -165, 108, -95);
+      ctx.stroke();
+      ctx.restore();
+
+      // Nur oqimi ichida sekin suzayotgan oltin chang zarrachalari
+      for (const m of DUST_MOTES) {
+        const mx = 140 + ((m.x + m.vx * 0.35 * t + 440) % 440);
+        const my = 260 + ((m.y + m.vy * 0.35 * t + 660) % 660);
+        const distFromCenter = Math.abs(mx - bulbX) / (120 + (my - bulbY) * 0.38);
+        if (distFromCenter < 1) {
+          const a = m.alpha * (1 - distFromCenter) * (0.55 + 0.45 * Math.sin(t * 2 + m.phase));
+          ctx.fillStyle = `rgba(255, 224, 155, ${a})`;
+          ctx.beginPath();
+          ctx.arc(mx, my, m.r * 1.15, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // SAHNA 7: ONA OLDIDA TIZ CHO'KKAN O'G'IL (37.0s – 44.0s)
+    // =========================================================================
+    function drawScene7(ctx, t, localT) {
+      const progress = clamp(localT / 7.0, 0, 1);
+
+      ctx.save();
+      const zoom = lerp(1.0, 1.05, progress);
+      ctx.translate(WIDTH * 0.5, HEIGHT * 0.55);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-WIDTH * 0.5, -HEIGHT * 0.55);
+
+      // Chuqur ta'sirchan shom foni (ko'k-binafsha va iliq qahrabo)
+      const bg = ctx.createLinearGradient(0, 0, WIDTH, HEIGHT);
+      bg.addColorStop(0, '#091026');
+      bg.addColorStop(0.5, '#1a1c36');
+      bg.addColorStop(0.85, '#2b1c26');
+      bg.addColorStop(1, '#0b0910');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Orqadan tushayotgan yumshoq iliq nur (mehr ramzi)
+      const rimGlow = ctx.createRadialGradient(420, 620, 15, 420, 650, 390);
+      rimGlow.addColorStop(0, 'rgba(255, 188, 102, 0.38)');
+      rimGlow.addColorStop(0.5, 'rgba(180, 115, 95, 0.14)');
+      rimGlow.addColorStop(1, 'rgba(180, 115, 95, 0)');
+      ctx.fillStyle = rimGlow;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Orqa fonda mayin yomg'ir chiziqlari
+      ctx.strokeStyle = 'rgba(185, 212, 255, 0.16)';
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      for (const r of RAIN_STREAKS) {
+        const ry = (r.y0 + r.speed * t) % (HEIGHT + 80) - 40;
+        const rx = r.x - (ry * 0.12);
+        ctx.strokeStyle = `rgba(185, 215, 255, ${r.alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx - 6, ry + r.len);
+        ctx.stroke();
+      }
+
+      // Sekin tushayotgan yorug' ko'z yosh tomchilari / yaproqchalar
+      for (const p of GLOW_PETALS) {
+        const py = (p.y0 + p.vy * t) % (HEIGHT + 40) - 20;
+        const px = p.x0 + Math.sin(t * 1.4 + p.phase) * p.sway;
+        const a = 0.25 + 0.45 * Math.sin(t * 2 + p.phase);
+        ctx.fillStyle = p.warm ? `rgba(255, 208, 135, ${a})` : `rgba(195, 225, 255, ${a})`;
+        ctx.beginPath();
+        ctx.ellipse(px, py, p.r * 0.7, p.r * 1.4, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Yer chizig'i
+      const groundY = 935;
+      ctx.fillStyle = '#07060b';
+      ctx.fillRect(0, groundY, WIDTH, HEIGHT - groundY);
+
+      const breath = Math.sin(t * 1.2) * 2.5;
+      const reach = smoothstep(0.1, 0.7, progress); // Ona qo'lining o'g'il yelkasiga yumshoq uzatilishi
+
+      ctx.save();
+      ctx.fillStyle = '#05050a';
+
+      // O'NG TOMONDA O'TIRGAN KEKSA ONA SILUETI
+      ctx.beginPath();
+      ctx.moveTo(615, groundY + 10);
+      ctx.bezierCurveTo(610, 770, 580, 640, 515, 610 + breath);
+      ctx.bezierCurveTo(465, 598 + breath, 435, 645 + breath, 425, 740);
+      ctx.lineTo(395, groundY + 10);
+      ctx.closePath();
+      ctx.fill();
+
+      // Ona boshi va ro'moli (o'g'liga mehr bilan pastga qaragan)
+      ctx.beginPath();
+      ctx.arc(475, 562 + breath, 44, 0, Math.PI * 2);
+      ctx.fill();
+      // Ro'mol orqa etagi
+      ctx.beginPath();
+      ctx.moveTo(508, 534 + breath);
+      ctx.bezierCurveTo(548, 565 + breath, 565, 635 + breath, 578, 705);
+      ctx.lineTo(505, 695);
+      ctx.closePath();
+      ctx.fill();
+
+      // CHAP TOMONDA TIZ CHO'KIB BOSHINI EGGAN O'G'IL SILUETI
+      ctx.beginPath();
+      ctx.moveTo(155, groundY + 10);
+      ctx.lineTo(375, groundY + 10);
+      ctx.bezierCurveTo(372, 845, 362, 765, 325, 728 + breath); // egilgan orqa/yelka
+      ctx.bezierCurveTo(285, 695 + breath, 232, 725 + breath, 205, 815);
+      ctx.lineTo(155, groundY + 10);
+      ctx.closePath();
+      ctx.fill();
+
+      // O'g'ilning afsus bilan pastga egilgan boshi
+      ctx.beginPath();
+      ctx.arc(348, 718 + breath, 36, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Onaning o'g'il yelkasiga tasalli berib qo'ygan qo'li
+      const handX = lerp(395, 336, reach);
+      const handY = lerp(695, 722 + breath, reach);
+      ctx.strokeStyle = '#05050a';
+      ctx.lineWidth = 22;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(455, 635 + breath);
+      ctx.quadraticCurveTo(418, 675, handX, handY);
+      ctx.stroke();
+
+      // Ikkala qahramon qirrasidagi nozik iliq nur (rim-light)
+      ctx.strokeStyle = 'rgba(255, 198, 118, 0.36)';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.arc(475, 562 + breath, 44, 2.2, 3.6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(348, 718 + breath, 36, -1.6, -0.2);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.restore();
+    }
+
+    // =========================================================================
+    // SAHNA 8: DUOGA QO'L OCHGAN ONA VA OLTIN NUR (44.0s – 52.0s)
+    // =========================================================================
+    function drawScene8(ctx, t, localT) {
+      const progress = clamp(localT / 8.0, 0, 1);
+
+      ctx.save();
+      // Sekin uzoqlashuvchi va kengayuvchi ulug'vor kamera
+      const zoom = lerp(1.06, 1.0, progress);
+      ctx.translate(WIDTH * 0.5, HEIGHT * 0.54);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-WIDTH * 0.5, -HEIGHT * 0.54);
+
+      // Nurafshon oltin tong osmoni
+      const sky = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      sky.addColorStop(0, '#2a1828');
+      sky.addColorStop(0.28, '#7a3b2e');
+      sky.addColorStop(0.58, '#d97c2b');
+      sky.addColorStop(0.85, '#f6be56');
+      sky.addColorStop(1, '#2b1614');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // Ona ortidan taralayotgan yorqin oltin quyosh yog'dusi
+      const sunX = WIDTH * 0.5;
+      const sunY = 640;
+      const sunHalo = ctx.createRadialGradient(sunX, sunY, 15, sunX, sunY, 520);
+      sunHalo.addColorStop(0, 'rgba(255, 252, 228, 0.98)');
+      sunHalo.addColorStop(0.22, 'rgba(255, 222, 130, 0.72)');
+      sunHalo.addColorStop(0.55, 'rgba(245, 152, 52, 0.28)');
+      sunHalo.addColorStop(1, 'rgba(245, 152, 52, 0)');
+      ctx.fillStyle = sunHalo;
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, 520, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Aylanib turuvchi mayin quyosh nurlari (god rays)
+      ctx.save();
+      ctx.translate(sunX, sunY);
+      const numRays = 12;
+      for (let i = 0; i < numRays; i++) {
+        const angle = (i / numRays) * Math.PI * 2 + t * 0.06;
+        ctx.save();
+        ctx.rotate(angle);
+        const rayGrad = ctx.createLinearGradient(0, 0, 0, -760);
+        rayGrad.addColorStop(0, 'rgba(255, 245, 200, 0.26)');
+        rayGrad.addColorStop(0.6, 'rgba(255, 215, 120, 0.08)');
+        rayGrad.addColorStop(1, 'rgba(255, 215, 120, 0)');
+        ctx.fillStyle = rayGrad;
+        ctx.beginPath();
+        ctx.moveTo(-16, 0);
+        ctx.lineTo(16, 0);
+        ctx.lineTo(84, -760);
+        ctx.lineTo(-84, -760);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+
+      // DUOGA IKKI QO'LINI OCHGAN ONA SILUETI (markazda)
+      const breath = Math.sin(t * 1.1) * 2.5;
+      const liftHands = smoothstep(0.0, 0.45, progress);
+      const handRaiseY = lerp(18, 0, liftHands);
+
+      ctx.save();
+      ctx.translate(WIDTH * 0.5, 1020);
+      ctx.fillStyle = '#140a0d';
+
+      // Gavda va ro'mol etaklari
+      ctx.beginPath();
+      ctx.moveTo(-165, 265);
+      ctx.bezierCurveTo(-155, 70, -125, -170, -68, -260 + breath);
+      ctx.quadraticCurveTo(0, -285 + breath, 68, -260 + breath);
+      ctx.bezierCurveTo(125, -170, 155, 70, 165, 265);
+      ctx.closePath();
+      ctx.fill();
+
+      // Bosh va ro'mol
+      ctx.beginPath();
+      ctx.arc(0, -328 + breath, 54, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Chap qo'l (duoga ochilgan)
+      ctx.strokeStyle = '#140a0d';
+      ctx.lineWidth = 28;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-66, -238 + breath);
+      ctx.quadraticCurveTo(-118, -165 + breath, -82, -215 + handRaiseY + breath);
+      ctx.lineTo(-42, -250 + handRaiseY + breath);
+      ctx.stroke();
+
+      // O'ng qo'l (duoga ochilgan)
+      ctx.beginPath();
+      ctx.moveTo(66, -238 + breath);
+      ctx.quadraticCurveTo(118, -165 + breath, 82, -215 + handRaiseY + breath);
+      ctx.lineTo(42, -250 + handRaiseY + breath);
+      ctx.stroke();
+
+      // Kaftlar (duoga ochiq)
+      ctx.fillStyle = '#140a0d';
+      ctx.beginPath();
+      ctx.ellipse(-34, -258 + handRaiseY + breath, 24, 11, -0.35, 0, Math.PI * 2);
+      ctx.ellipse(34, -258 + handRaiseY + breath, 24, 11, 0.35, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Oltin nurli kontur (rim-light)
+      ctx.strokeStyle = 'rgba(255, 238, 175, 0.72)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, -328 + breath, 54, -2.75, -0.38);
+      ctx.stroke();
+      ctx.restore();
+
+      // Yuqoriga tinchgina ko'tarilayotgan yuzlab oltin nur zarrachalari
+      for (const p of DUO_PARTICLES) {
+        const py = ((p.y0 + p.vy * t) % HEIGHT + HEIGHT) % HEIGHT;
+        const px = p.x0 + Math.sin(t * 1.1 + p.phase) * p.sway;
+        const tw = 0.45 + 0.55 * Math.sin(t * 2.8 + p.phase);
+        ctx.fillStyle = `rgba(255, 244, 195, ${p.alpha * tw})`;
+        ctx.beginPath();
+        ctx.arc(px, py, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // Sahna dispetcheri
+    function renderSceneById(ctx, sceneId, t) {
+      const sc = SCENES[sceneId];
+      const localT = clamp(t - sc.start, 0, sc.end - sc.start);
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      switch (sceneId) {
+        case 0: drawScene1(ctx, t, localT); break;
+        case 1: drawScene2(ctx, t, localT); break;
+        case 2: drawScene3(ctx, t, localT); break;
+        case 3: drawScene4(ctx, t, localT); break;
+        case 4: drawScene5(ctx, t, localT); break;
+        case 5: drawScene6(ctx, t, localT); break;
+        case 6: drawScene7(ctx, t, localT); break;
+        case 7: drawScene8(ctx, t, localT); break;
+      }
+    }
+
+    // =========================================================================
+    // VINETKA, FILM GRAIN VA SINXRON O'ZBEKCHA SUBTITRLAR
+    // =========================================================================
+    function drawVignetteAndGrain(ctx) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.drawImage(grainCanvas, 0, 0, WIDTH, HEIGHT);
+      ctx.restore();
+
+      const vig = ctx.createRadialGradient(
+        WIDTH * 0.5,
+        HEIGHT * 0.48,
+        WIDTH * 0.34,
+        WIDTH * 0.5,
+        HEIGHT * 0.5,
+        HEIGHT * 0.67
+      );
+      vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      vig.addColorStop(0.72, 'rgba(0, 0, 0, 0.25)');
+      vig.addColorStop(1, 'rgba(0, 0, 0, 0.72)');
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    }
+
+    function drawSubtitles(ctx, t) {
+      for (const sc of SCENES) {
+        if (t >= sc.subStart && t <= sc.subEnd) {
+          const fadeIn = smoothstep(sc.subStart, sc.subStart + 0.55, t);
+          const fadeOut = 1 - smoothstep(sc.subEnd - 0.55, sc.subEnd, t);
+          const alpha = clamp(fadeIn * fadeOut, 0, 1);
+          if (alpha <= 0.01) continue;
+
+          const lines = sc.subtitle.split('\n');
+          const baseY = HEIGHT * 0.785; // Quyi-markaziy xavfsiz hudud (~78%)
+          const lineHeight = 50;
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.font = 'italic 600 36px "Playfair Display", Georgia, serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          // Avval qorong'u soya (yorug' oltin sahnada ham tiniq o'qilishi uchun)
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+          ctx.shadowBlur = 20;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 4;
+          ctx.fillStyle = '#ffffff';
+          lines.forEach((line, idx) => {
+            const y = baseY + (idx - (lines.length - 1) / 2) * lineHeight;
+            ctx.fillText(line, WIDTH * 0.5, y);
+          });
+
+          // Ustidan iliq yumshoq yog'du (warm glow)
+          ctx.shadowColor = 'rgba(255, 205, 125, 0.55)';
+          ctx.shadowBlur = 12;
+          ctx.shadowOffsetY = 0;
+          lines.forEach((line, idx) => {
+            const y = baseY + (idx - (lines.length - 1) / 2) * lineHeight;
+            ctx.fillText(line, WIDTH * 0.5, y);
+          });
+
+          ctx.restore();
+          break;
+        }
+      }
+    }
+
+    // =========================================================================
+    // ASOSIY KOMPOZITOR (0.8s Crossfade + 50s-52s Fade to Black)
+    // =========================================================================
+    function renderFrame(t) {
+      t = clamp(t, 0, TOTAL_DURATION);
+
+      let activeIdx = SCENES.length - 1;
+      for (let i = 0; i < SCENES.length; i++) {
+        if (t >= SCENES[i].start && t < SCENES[i].end) {
+          activeIdx = i;
+          break;
+        }
+      }
+
+      const activeScene = SCENES[activeIdx];
+      const nextIdx = activeIdx + 1;
+
+      mainCtx.clearRect(0, 0, WIDTH, HEIGHT);
+
+      // Sahnalararo 0.8 soniyalik erib o'tish (Crossfade)
+      if (nextIdx < SCENES.length && t > activeScene.end - CROSSFADE_DUR) {
+        const blend = smoothstep(activeScene.end - CROSSFADE_DUR, activeScene.end, t);
+        renderSceneById(ctxA, activeIdx, t);
+        renderSceneById(ctxB, nextIdx, t);
+
+        mainCtx.globalAlpha = 1;
+        mainCtx.drawImage(offCanvasA, 0, 0);
+        mainCtx.globalAlpha = blend;
+        mainCtx.drawImage(offCanvasB, 0, 0);
+        mainCtx.globalAlpha = 1;
+      } else {
+        renderSceneById(ctxA, activeIdx, t);
+        mainCtx.drawImage(offCanvasA, 0, 0);
+      }
+
+      drawVignetteAndGrain(mainCtx);
+      drawSubtitles(mainCtx, t);
+
+      // Boshida silliq ochilish (0.0s – 0.6s)
+      if (t < 0.6) {
+        const fadeIn = 1 - smoothstep(0, 0.6, t);
+        mainCtx.fillStyle = `rgba(0, 0, 0, ${fadeIn})`;
+        mainCtx.fillRect(0, 0, WIDTH, HEIGHT);
+      }
+
+      // Yakunda sof qora rangga erib ketish (50.0s – 52.0s)
+      if (t > 50.0) {
+        const fadeOut = smoothstep(50.0, TOTAL_DURATION, t);
+        mainCtx.fillStyle = `rgba(0, 0, 0, ${fadeOut})`;
+        mainCtx.fillRect(0, 0, WIDTH, HEIGHT);
+      }
+    }
+
+    // =========================================================================
+    // PLAY / PAUSE / REPLAY VA AUDIO SINXRONIZATSIYASI
+    // =========================================================================
+    function setOverlayMode(mode) {
+      // mode: 'hidden' | 'play' | 'replay'
+      if (mode === 'hidden') {
+        centerOverlay.classList.add('opacity-0', 'pointer-events-none');
+        centerOverlay.classList.remove('opacity-100');
+      } else {
+        centerOverlay.classList.remove('opacity-0', 'pointer-events-none');
+        centerOverlay.classList.add('opacity-100');
+        if (mode === 'replay') {
+          iconPlay.classList.add('hidden');
+          iconReplay.classList.remove('hidden');
+          centerOverlay.setAttribute('aria-label', 'Qayta ijro etish');
+        } else {
+          iconReplay.classList.add('hidden');
+          iconPlay.classList.remove('hidden');
+          centerOverlay.setAttribute('aria-label', 'Ijro etish');
+        }
+      }
+    }
+
+    async function startPlayback() {
+      if (state.isEnded || state.currentTime >= TOTAL_DURATION - 0.05) {
+        state.currentTime = 0;
+        state.isEnded = false;
+        try {
+          songAudio.currentTime = 0;
+        } catch (_) {}
+      }
+
+      state.isPlaying = true;
+      state.lastFrameTs = performance.now();
+      setOverlayMode('hidden');
+
+      // Audio fayl mavjud bo'lsa ishga tushiramiz; yo'q bo'lsa ichki taymer bilan muammosiz davom etadi
+      try {
+        if (Math.abs((songAudio.currentTime || 0) - state.currentTime) > 0.15) {
+          songAudio.currentTime = state.currentTime;
+        }
+        await songAudio.play();
+        state.audioAvailable = true;
+      } catch (_) {
+        state.audioAvailable = false;
+      }
+    }
+
+    function pausePlayback() {
+      state.isPlaying = false;
+      try {
+        if (!songAudio.paused) songAudio.pause();
+      } catch (_) {}
+      setOverlayMode('play');
+    }
+
+    function togglePlayback() {
+      if (state.isPlaying) pausePlayback();
+      else startPlayback();
+    }
+
+    function animationLoop(now) {
+      if (state.isPlaying) {
+        if (
+          state.audioAvailable &&
+          !songAudio.paused &&
+          !songAudio.ended &&
+          !Number.isNaN(songAudio.currentTime)
+        ) {
+          state.currentTime = songAudio.currentTime;
+        } else {
+          const dt = Math.min(0.1, (now - state.lastFrameTs) / 1000);
+          state.currentTime += dt;
+        }
+        state.lastFrameTs = now;
+
+        if (state.currentTime >= TOTAL_DURATION) {
+          state.currentTime = TOTAL_DURATION;
+          state.isPlaying = false;
+          state.isEnded = true;
+          try {
+            if (!songAudio.paused) songAudio.pause();
+          } catch (_) {}
+          renderFrame(TOTAL_DURATION);
+          setOverlayMode('replay');
+        } else {
+          renderFrame(state.currentTime);
+        }
+      } else {
+        state.lastFrameTs = now;
+      }
+
+      requestAnimationFrame(animationLoop);
+    }
+
+    // Audio mavjud bo'lmaganda xatolik chiqarmasdan ichki taymerga o'tish
+    songAudio.addEventListener('error', () => {
+      state.audioAvailable = false;
+    });
+
+    centerOverlay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startPlayback();
+    });
+
+    mainCanvas.addEventListener('click', () => {
+      togglePlayback();
+    });
+
+    // Boshlang'ich atmosfera kadrini chizish
+    window.addEventListener('load', () => {
+      renderFrame(0.6);
+      setOverlayMode('play');
+      requestAnimationFrame(animationLoop);
+    });
+  </script>
+</body>
+</html>
